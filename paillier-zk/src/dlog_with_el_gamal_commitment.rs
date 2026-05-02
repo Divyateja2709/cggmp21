@@ -110,8 +110,11 @@ pub struct PrivateData<'a, E: Curve> {
 #[udigest(bound = "")]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(bound = ""))]
 pub struct Commitment<E: Curve> {
+    /// `A` in the paper
     pub a: Point<E>,
+    /// `N` in the paper
     pub n: Point<E>,
+    /// `B` in the paper
     pub b: Point<E>,
 }
 
