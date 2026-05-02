@@ -98,7 +98,7 @@ pub struct SecurityParams {
 /// Public data that both parties know
 #[derive(Debug, Clone, Copy, udigest::Digestable)]
 pub struct Data<'a> {
-    /// N_i in the spec
+    /// N_0 in paper
     #[udigest(as = &crate::common::encoding::Integer)]
     pub n: &'a Integer,
     /// A number close to square root of n
