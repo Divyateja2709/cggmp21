@@ -60,13 +60,13 @@
 //! // 1. Setup: prover prepares the paillier keys
 //!
 //! // C and D are encrypted by this key
-//! let key_j: fast_paillier::EncryptionKey = pregenerated::someone_encryption_key0();
+//! let key0: fast_paillier::EncryptionKey = pregenerated::someone_encryption_key0();
 //! // Y is encrypted using this key
-//! let key_i: fast_paillier::EncryptionKey = pregenerated::someone_encryption_key1();
+//! let key1: fast_paillier::EncryptionKey = pregenerated::someone_encryption_key1();
 //!
-//! // C is some number encrypted using key_j. Neither of parties
+//! // C is some number encrypted using key0. Neither of parties
 //! // need to know the plaintext
-//! let ciphertext_c = Integer::sample_in_mult_group_of(&mut rng, &key_j.nn());
+//! let ciphertext_c = Integer::sample_in_mult_group_of(&mut rng, &key0.nn());
 //!
 //! // 2. Setup: prover prepares all plaintexts
 //!
@@ -86,28 +86,28 @@
 //! // X in paper
 //! let ciphertext_x = Point::<E>::generator() * plaintext_x.to_scalar();
 //! // Y and ρ_y in paper
-//! let (ciphertext_y, nonce_y) = key_i.encrypt_with_random(
+//! let (ciphertext_y, nonce_y) = key1.encrypt_with_random(
 //!     &mut rng,
 //!     &(plaintext_y),
 //! )?;
 //! // nonce is ρ in paper
-//! let (ciphertext_y_by_key_j, nonce) = key_j.encrypt_with_random(
+//! let (ciphertext_y_by_key0, nonce) = key0.encrypt_with_random(
 //!     &mut rng,
 //!     &(plaintext_y)
 //! )?;
 //! // D in paper
-//! let ciphertext_d = key_j
+//! let ciphertext_d = key0
 //!     .oadd(
-//!         &key_j.omul(&plaintext_x, &ciphertext_c)?,
-//!         &ciphertext_y_by_key_j,
+//!         &key0.omul(&plaintext_x, &ciphertext_c)?,
+//!         &ciphertext_y_by_key0,
 //!     )?;
 //!
 //! // 4. Prover computes a non-interactive proof that plaintext_x and
 //! //    plaintext_y are at most `l_x` and `l_y` bits
 //!
 //! let data = p::Data {
-//!     key_j: &key_j,
-//!     key_i: &key_i,
+//!     key0: &key0,
+//!     key1: &key1,
 //!     c: &ciphertext_c,
 //!     d: &ciphertext_d,
 //!     x: &ciphertext_x,
@@ -180,10 +180,10 @@ pub struct SecurityParams {
 pub struct Data<'a, C: Curve> {
     /// Nj in the spec, public key that C was encrypted on
     #[udigest(as = crate::common::encoding::AnyEncryptionKey)]
-    pub key_j: &'a dyn AnyEncryptionKey,
+    pub key0: &'a dyn AnyEncryptionKey,
     /// Ni in the spec, public key that y -> Y was encrypted on
     #[udigest(as = crate::common::encoding::AnyEncryptionKey)]
-    pub key_i: &'a dyn AnyEncryptionKey,
+    pub key1: &'a dyn AnyEncryptionKey,
     /// C in the spec, some data encrypted on Nj
     #[udigest(as = &crate::common::encoding::Integer)]
     pub c: &'a Ciphertext,
@@ -299,8 +299,8 @@ pub mod interactive {
 
         let alpha = Integer::from_rng_half_pm(&mut rng, &two_to_l_e);
         let beta = Integer::from_rng_half_pm(&mut rng, &two_to_l_prime_e);
-        let r = Integer::sample_in_mult_group_of(&mut rng, data.key_j.n());
-        let r_y = Integer::sample_in_mult_group_of(&mut rng, data.key_i.n());
+        let r = Integer::sample_in_mult_group_of(&mut rng, data.key0.n());
+        let r_y = Integer::sample_in_mult_group_of(&mut rng, data.key1.n());
         let gamma = Integer::from_rng_half_pm(&mut rng, &hat_n_at_two_to_l_e);
         let delta = Integer::from_rng_half_pm(&mut rng, &hat_n_at_two_to_l_e);
         let m = Integer::from_rng_half_pm(&mut rng, &hat_n_at_two_to_l);
@@ -308,12 +308,12 @@ pub mod interactive {
 
         let commitment = Commitment {
             a: {
-                let beta_enc_key0 = data.key_j.encrypt_with(&beta, &r)?;
-                let alpha_at_c = data.key_j.omul(&alpha, data.c)?;
-                data.key_j.oadd(&alpha_at_c, &beta_enc_key0)?
+                let beta_enc_key0 = data.key0.encrypt_with(&beta, &r)?;
+                let alpha_at_c = data.key0.omul(&alpha, data.c)?;
+                data.key0.oadd(&alpha_at_c, &beta_enc_key0)?
             },
             b_x: Point::<C>::generator() * alpha.to_scalar(),
-            b_y: data.key_i.encrypt_with(&beta, &r_y)?,
+            b_y: data.key1.encrypt_with(&beta, &r_y)?,
             e: aux.combine(&alpha, &gamma)?,
             s: aux.combine(pdata.x, &m)?,
             f: aux.combine(&beta, &delta)?,
@@ -345,13 +345,13 @@ pub mod interactive {
             z3: &pcomm.gamma + challenge * &pcomm.m,
             z4: &pcomm.delta + challenge * &pcomm.mu,
             w: data
-                .key_j
+                .key0
                 .n()
                 .combine(&pcomm.r, &Integer::one(), pdata.nonce, challenge)
                 .ok_or_else(crate::BadExponent::undefined)?,
-            // TODO: this can be optimized as prover knows key_i factorization
+            // TODO: this can be optimized as prover knows key1 factorization
             w_y: data
-                .key_i
+                .key1
                 .n()
                 .combine(&pcomm.r_y, &Integer::one(), pdata.nonce_y, challenge)
                 .ok_or_else(crate::BadExponent::undefined)?,
@@ -370,24 +370,24 @@ pub mod interactive {
         // Verify public data
         fail_if(
             InvalidProofReason::RangeCheck(1),
-            data.c.in_mult_group_of(data.key_j.nn()),
+            data.c.in_mult_group_of(data.key0.nn()),
         )?;
         fail_if(
             InvalidProofReason::RangeCheck(2),
-            data.d.in_mult_group_of(data.key_j.nn()),
+            data.d.in_mult_group_of(data.key0.nn()),
         )?;
         fail_if(
             InvalidProofReason::RangeCheck(3),
-            data.y.in_mult_group_of(data.key_i.nn()),
+            data.y.in_mult_group_of(data.key1.nn()),
         )?;
         // Verify commitment
         fail_if(
             InvalidProofReason::RangeCheck(4),
-            commitment.a.in_mult_group_of(data.key_j.nn()),
+            commitment.a.in_mult_group_of(data.key0.nn()),
         )?;
         fail_if(
             InvalidProofReason::RangeCheck(5),
-            commitment.b_y.in_mult_group_of(data.key_i.nn()),
+            commitment.b_y.in_mult_group_of(data.key1.nn()),
         )?;
         fail_if(
             InvalidProofReason::RangeCheck(6),
@@ -410,23 +410,23 @@ pub mod interactive {
         {
             let lhs = {
                 let z1_at_c = data
-                    .key_j
+                    .key0
                     .omul(&proof.z1, data.c)
                     .map_err(|_| InvalidProofReason::PaillierOp)?;
                 let enc = data
-                    .key_j
+                    .key0
                     .encrypt_with(&proof.z2, &proof.w)
                     .map_err(|_| InvalidProofReason::PaillierEnc)?;
-                data.key_j
+                data.key0
                     .oadd(&z1_at_c, &enc)
                     .map_err(|_| InvalidProofReason::PaillierOp)?
             };
             let rhs = {
                 let e_at_d = data
-                    .key_j
+                    .key0
                     .omul(challenge, data.d)
                     .map_err(|_| InvalidProofReason::PaillierOp)?;
-                data.key_j
+                data.key0
                     .oadd(&commitment.a, &e_at_d)
                     .map_err(|_| InvalidProofReason::PaillierOp)?
             };
@@ -439,15 +439,15 @@ pub mod interactive {
         }
         {
             let lhs = data
-                .key_i
+                .key1
                 .encrypt_with(&proof.z2, &proof.w_y)
                 .map_err(|_| InvalidProofReason::PaillierEnc)?;
             let rhs = {
                 let e_at_y = data
-                    .key_i
+                    .key1
                     .omul(challenge, data.y)
                     .map_err(|_| InvalidProofReason::PaillierOp)?;
-                data.key_i
+                data.key1
                     .oadd(&commitment.b_y, &e_at_y)
                     .map_err(|_| InvalidProofReason::PaillierOp)?
             };
@@ -588,8 +588,8 @@ mod test {
         let d = ek0.oadd(&x_at_c, &y_enc_ek0).unwrap();
 
         let data = super::Data {
-            key_j: &ek0,
-            key_i: &ek1,
+            key0: &ek0,
+            key1: &ek1,
             c: &c,
             d: &d,
             y: &y_enc_ek1,
